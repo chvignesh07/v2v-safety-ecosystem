@@ -1,0 +1,104 @@
+# V2V Safety Ecosystem - Docker Compose Development Environment
+# Cross-platform containerization setup for local development
+# Supports OS-agnostic development across Windows, macOS, and Linux
+
+version: '3.8'
+
+services:
+  # Backend API Service (Python/FastAPI)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: v2v-backend
+    ports:
+      - "8000:8000"  # FastAPI default port
+    environment:
+      - PYTHONPATH=/app
+      - ENV=development
+      - DATABASE_URL=postgresql://postgres:password@db:5432/v2v_safety
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./backend:/app
+      - /app/__pycache__  # Exclude Python cache
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    networks:
+      - v2v-network
+
+  # Frontend Service (Node.js/React)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: v2v-frontend
+    ports:
+      - "3000:3000"  # React development server
+    environment:
+      - NODE_ENV=development
+      - REACT_APP_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # Prevent node_modules overwrite
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - v2v-network
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: v2v-database
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=v2v_safety
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    restart: unless-stopped
+    networks:
+      - v2v-network
+
+  # Redis Cache Service
+  redis:
+    image: redis:7-alpine
+    container_name: v2v-cache
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - v2v-network
+
+  # Development Tools Container
+  dev-tools:
+    image: python:3.11-slim
+    container_name: v2v-dev-tools
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: tail -f /dev/null  # Keep container running
+    environment:
+      - PYTHONPATH=/workspace
+    networks:
+      - v2v-network
+    profiles:
+      - tools  # Only start with --profile tools
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  v2v-network:
+    driver: bridge
+    name: v2v-safety-network
